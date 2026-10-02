@@ -1,0 +1,5 @@
+ee_project.txt
+__pycache__/
+data/raw/
+data/processed/
+models/*.pt

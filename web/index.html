@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Giám sát chất lượng không khí TP.HCM</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --nen:#f5f7fa; --the:#ffffff; --vien:#dde2e8; --chu:#16202b;
+    --chu-mo:#5a6470; --chinh:#1f7a8c;
+    --tot:#2e8b62; --tb:#c9841b; --xau:#c0483f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,"Segoe UI",Roboto,sans-serif;
+       background:var(--nen);color:var(--chu);height:100vh;overflow:hidden}
+  #khung{display:flex;height:100vh}
+  #ban-do{flex:1;min-width:0}
+  /* Chrome ve khung focus quanh ca lop SVG khi bam vao o luoi */
+  .leaflet-container svg:focus, .leaflet-interactive:focus{outline:none}
+  #canh{width:400px;background:var(--the);border-left:1px solid var(--vien);
+        display:flex;flex-direction:column;overflow-y:auto}
+  header{padding:16px 18px 12px;border-bottom:1px solid var(--vien)}
+  h1{margin:0;font-size:16px;line-height:1.35}
+  .phu{color:var(--chu-mo);font-size:12px;margin-top:4px}
+  .muc{padding:14px 18px;border-bottom:1px solid var(--vien)}
+  .nhan{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+        color:var(--chu-mo);margin-bottom:6px;font-weight:600}
+  select,input[type=range]{width:100%}
+  select{padding:7px 9px;border:1px solid var(--vien);border-radius:6px;
+         background:#fff;font-size:13px;color:var(--chu)}
+  .ngay{display:flex;justify-content:space-between;font-size:12px;
+        color:var(--chu-mo);margin-top:6px}
+  .ngay b{color:var(--chu);font-size:13px}
+  .chu-giai{display:flex;gap:4px;margin-top:8px}
+  .chu-giai div{flex:1;height:8px;border-radius:2px}
+  .o-nho{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+  .o-nho div{background:var(--nen);border:1px solid var(--vien);border-radius:6px;
+             padding:8px;text-align:center}
+  .o-nho .n{font-size:10px;color:var(--chu-mo)}
+  .o-nho .v{font-size:13px;font-weight:700;margin-top:2px}
+  .trong{color:var(--chu-mo);font-size:13px;padding:22px 18px;text-align:center}
+  canvas{margin-top:6px}
+  .the-canh{border-radius:6px;padding:9px 11px;color:#fff;font-size:13px;
+            font-weight:600;margin-top:8px}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+  th,td{padding:4px 6px;border-bottom:1px solid var(--vien);text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--chu-mo);font-weight:600}
+  .info-o{background:var(--nen);border:1px solid var(--vien);border-radius:6px;
+          padding:8px 10px;font-size:12px;color:var(--chu-mo)}
+  @media(max-width:860px){
+    #khung{flex-direction:column}
+    #canh{width:100%;height:46vh;border-left:none;border-top:1px solid var(--vien)}
+    #ban-do{height:54vh}
+  }
+</style>
+</head>
+<body>
+<div id="khung">
+  <div id="ban-do"></div>
+  <aside id="canh">
+    <header>
+      <h1>Giám sát &amp; dự báo chất lượng không khí TP.HCM</h1>
+      <div class="phu" id="pham-vi">Đang tải…</div>
+    </header>
+
+    <div class="muc">
+      <div class="nhan">Chỉ số quan trắc</div>
+      <select id="chon-chi-so"></select>
+    </div>
+
+    <div class="muc">
+      <div class="nhan">Thời gian</div>
+      <input type="range" id="thanh-ngay" min="0" max="0" value="0">
+      <div class="ngay"><span id="ngay-dau"></span><b id="ngay-hien"></b><span id="ngay-cuoi"></span></div>
+      <div class="chu-giai">
+        <div style="background:var(--tot)"></div>
+        <div style="background:var(--tb)"></div>
+        <div style="background:var(--xau)"></div>
+      </div>
+      <div class="ngay"><span>Tốt</span><span>Trung bình</span><span>Xấu</span></div>
+    </div>
+
+    <div class="muc" id="khu-chi-tiet">
+      <div class="trong">Bấm vào một ô trên bản đồ để xem biểu đồ lịch sử và dự báo.</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+const API = "";
+let thongTin = null, luoiLayer = null, duLieuNgay = {}, bieuDo = null;
+let chiSoHienTai = "no2", danhSachNgay = [], oDangChon = null;
+
+const map = L.map("ban-do", {zoomControl:true}).setView([10.95, 106.95], 9);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution:'&copy; OpenStreetMap contributors', maxZoom:18
+}).addTo(map);
+
+const fmt = v => {
+  if (v === null || v === undefined || !isFinite(v)) return "–";
+  const a = Math.abs(v);
+  if (a !== 0 && (a < 0.001 || a >= 1e5)) return v.toExponential(2);
+  return v.toFixed(a < 1 ? 3 : 2);
+};
+
+function mauTheoNguong(v, ng){
+  if (v === null || v === undefined || !isFinite(v)) return "#e3e7ec";
+  if (!ng) return "#2e8b62";
+  if (v < ng.tot_duoi) return "#2e8b62";
+  if (v < ng.trung_binh_duoi) return "#c9841b";
+  return "#c0483f";
+}
+
+async function lay(url){
+  const r = await fetch(API + url);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function ngayTuChiSo(i){ return danhSachNgay[i]; }
+
+function chuoiNgay(d){
+  const th = String(d.getMonth()+1).padStart(2,"0"), ng = String(d.getDate()).padStart(2,"0");
+  return `${d.getFullYear()}-${th}-${ng}`;
+}
+function lietKeNgay(dau, cuoi){
+  const ds = [], d = new Date(dau + "T00:00:00"), het = new Date(cuoi + "T00:00:00");
+  while (d <= het){ ds.push(chuoiNgay(d)); d.setDate(d.getDate()+1); }
+  return ds;
+}
+
+async function veBanDo(ngay){
+  const ng = thongTin.nguong[chiSoHienTai];
+  let dl;
+  const khoa = chiSoHienTai + "|" + ngay;
+  if (duLieuNgay[khoa]) dl = duLieuNgay[khoa];
+  else {
+    try { dl = await lay(`/api/ban-do?chi_so=${chiSoHienTai}&ngay=${ngay}`); }
+    catch(e){ dl = {gia_tri:{}}; }
+    duLieuNgay[khoa] = dl;
+  }
+  luoiLayer.setStyle(f => {
+    const v = dl.gia_tri[f.properties.id_o];
+    return {fillColor: mauTheoNguong(v, ng), fillOpacity: v==null?0.15:0.72,
+            color:"#ffffff", weight:0.5};
+  });
+}
+
+function veBieuDo(ls, db){
+  const nhan = ls.ngay.slice(), gt = ls.gia_tri.slice();
+  // Duong du bao noi tu gia tri thuc do cuoi cung; diem noi nay khong ve cham
+  // de khong bi hieu nham la mot ngay du bao
+  const duBao = new Array(gt.length).fill(null);
+  const iCuoi = gt.map(v=>v!==null).lastIndexOf(true);
+  if (db && iCuoi >= 0) duBao[iCuoi] = gt[iCuoi];
+  const banKinh = duBao.map((v,i)=> i===iCuoi ? 0 : 3);
+  (db ? db.du_bao : []).forEach(x => { nhan.push(x.ngay); gt.push(null); duBao.push(x.gia_tri); });
+
+  const ctx = document.getElementById("bieu-do").getContext("2d");
+  if (bieuDo) bieuDo.destroy();
+  bieuDo = new Chart(ctx, {
+    type:"line",
+    data:{labels:nhan, datasets:[
+      {label:"Thực đo", data:gt, borderColor:"#1f7a8c", backgroundColor:"rgba(31,122,140,.10)",
+       borderWidth:1.6, pointRadius:0, tension:.25, fill:true, spanGaps:true},
+      {label:"Dự báo", data:duBao, borderColor:"#c0483f", borderWidth:2,
+       borderDash:[5,3], pointRadius:ctx0=>banKinh[ctx0.dataIndex] ?? 3,
+       pointBackgroundColor:"#c0483f", tension:.25, spanGaps:true}
+    ]},
+    options:{responsive:true, interaction:{mode:"index",intersect:false},
+      plugins:{legend:{labels:{boxWidth:10,font:{size:11}}}},
+      scales:{x:{ticks:{maxTicksLimit:4,autoSkip:true,maxRotation:0,font:{size:10}}},
+              y:{ticks:{font:{size:10},callback:v=>fmt(v)}}}}
+  });
+}
+
+async function chonO(id_o, ma_o){
+  oDangChon = id_o;
+  const khu = document.getElementById("khu-chi-tiet");
+  khu.innerHTML = '<div class="trong">Đang tải…</div>';
+  try{
+    const ls = await lay(`/api/lich-su?id_o=${id_o}&chi_so=${chiSoHienTai}&so_ngay=120`);
+    let db = null;
+    try { db = await lay(`/api/du-bao?id_o=${id_o}&chi_so=${chiSoHienTai}`); } catch(e){}
+
+    const hopLe = ls.gia_tri.filter(v=>v!==null);
+    const tb = hopLe.reduce((a,b)=>a+b,0)/(hopLe.length||1);
+    const mau = {"Tốt":"var(--tot)","Trung bình":"var(--tb)","Xấu":"var(--xau)"};
+
+    khu.innerHTML = `
+      <div class="nhan">Ô lưới ${ma_o}</div>
+      <div class="info-o">Đơn vị: ${ls.don_vi} &nbsp;·&nbsp; ${thongTin.kich_thuoc_o_km}×${thongTin.kich_thuoc_o_km} km</div>
+      <div class="o-nho">
+        <div><div class="n">Mới nhất</div><div class="v">${fmt(hopLe[hopLe.length-1])}</div></div>
+        <div><div class="n">TB 120 ngày</div><div class="v">${fmt(tb)}</div></div>
+        <div><div class="n">Cao nhất</div><div class="v">${fmt(Math.max(...hopLe))}</div></div>
+      </div>
+      <canvas id="bieu-do" height="150"></canvas>
+      ${db ? db.du_bao.map(x=>
+        `<div class="the-canh" style="background:${mau[x.muc]||'#8a8a8a'}">
+           ${x.ngay} (t+${x.tam}) — ${fmt(x.gia_tri)} · ${x.muc}</div>`).join("")
+        : '<div class="info-o" style="margin-top:8px">Chỉ số này không có dự báo — chỉ hiển thị bản đồ.</div>'}
+    `;
+    veBieuDo(ls, db);
+  }catch(e){
+    khu.innerHTML = '<div class="trong">Không lấy được dữ liệu cho ô này.</div>';
+  }
+}
+
+async function khoiDong(){
+  thongTin = await lay("/api/thong-tin");
+  danhSachNgay = lietKeNgay(thongTin.ngay_dau, thongTin.ngay_cuoi);
+
+  document.getElementById("pham-vi").textContent =
+    `${thongTin.so_o_luoi} ô lưới ${thongTin.kich_thuoc_o_km}×${thongTin.kich_thuoc_o_km} km · ${thongTin.ngay_dau} → ${thongTin.ngay_cuoi}`;
+
+  const sel = document.getElementById("chon-chi-so");
+  sel.innerHTML = thongTin.chi_so.map(c =>
+    `<option value="${c.ma}">${c.ma.toUpperCase()} — ${c.ten}${c.co_du_bao?" (có dự báo)":""}</option>`).join("");
+  sel.value = chiSoHienTai;
+
+  const gj = await lay("/api/luoi");
+  luoiLayer = L.geoJSON(gj, {
+    style:{color:"#fff", weight:0.5, fillOpacity:0.7},
+    onEachFeature:(f, layer)=>{
+      // Toa do bam -> o luoi: hoi PostGIS (ST_Contains) thay vi tu tinh o trinh duyet
+      layer.on("click", async e => {
+        try {
+          const o = await lay(`/api/o-tai-diem?kinh_do=${e.latlng.lng}&vi_do=${e.latlng.lat}`);
+          chonO(o.id_o, o.ma_o);
+        } catch(_) { chonO(f.properties.id_o, f.properties.ma_o); }
+      });
+      layer.bindTooltip("Ô " + f.properties.ma_o, {sticky:true});
+    }
+  }).addTo(map);
+  map.invalidateSize();
+  map.fitBounds(luoiLayer.getBounds(), {padding:[12,12]});
+  window.addEventListener("resize", ()=> map.invalidateSize());
+
+  const thanh = document.getElementById("thanh-ngay");
+  // Mo vao ngay moi nhat CO du lieu cua chi so dang chon (S5P tre vai ngay)
+  const ngayCuoiCuaChiSo = ()=> {
+    const c = thongTin.chi_so.find(x=>x.ma===chiSoHienTai);
+    const i = danhSachNgay.indexOf(c ? c.ngay_cuoi : "");
+    return i < 0 ? danhSachNgay.length - 1 : i;
+  };
+  thanh.max = danhSachNgay.length - 1;
+  thanh.value = ngayCuoiCuaChiSo();
+  document.getElementById("ngay-dau").textContent = thongTin.ngay_dau;
+  document.getElementById("ngay-cuoi").textContent = thongTin.ngay_cuoi;
+
+  const capNhat = async ()=>{
+    const ngay = ngayTuChiSo(+thanh.value);
+    document.getElementById("ngay-hien").textContent = ngay;
+    await veBanDo(ngay);
+  };
+  thanh.addEventListener("input", ()=>{
+    document.getElementById("ngay-hien").textContent = ngayTuChiSo(+thanh.value);
+  });
+  thanh.addEventListener("change", capNhat);
+  sel.addEventListener("change", async ()=>{
+    chiSoHienTai = sel.value;
+    if (+thanh.value > ngayCuoiCuaChiSo()) thanh.value = ngayCuoiCuaChiSo();
+    await capNhat();
+    if (oDangChon) chonO(oDangChon,
+      (gj.features.find(f=>f.properties.id_o===oDangChon)||{properties:{}}).properties.ma_o || "");
+  });
+
+  await capNhat();
+}
+
+khoiDong().catch(e=>{
+  document.getElementById("pham-vi").textContent = "Lỗi: " + e.message;
+});
+</script>
+</body>
+</html>
