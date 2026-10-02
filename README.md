@@ -7,6 +7,8 @@ Engine, huấn luyện mô hình AI dự báo 1–3 ngày, hiển thị trên We
 
 ---
 
+> **Thành viên nhóm mới:** đọc [HUONG_DAN_NHOM.md](HUONG_DAN_NHOM.md) trước.
+>
 > **Mở web nhanh:** bấm đúp `chay_web.bat` (tự bật CSDL và mở trình duyệt). Đóng cửa sổ đen là tắt web.
 
 ## 1. Cài đặt
@@ -28,13 +30,9 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
   dòng lệnh `D:\pgsql\bin\psql -U postgres -d khong_khi`.
 - Tắt hẳn: `D:\pgsql\bin\pg_ctl -D D:\pgsql\data stop`
 
-**Nạp dữ liệu có sẵn (cho thành viên nhóm):** lấy file `khong_khi.backup`
-(~73 MB, nhóm chia sẻ qua Google Drive) rồi chạy, không cần tải lại từ GEE:
-
-```bash
-createdb -U postgres -p 5433 khong_khi
-pg_restore -U postgres -p 5433 -d khong_khi --no-owner khong_khi.backup
-```
+**Thành viên nhóm:** không cần làm theo mục này, xem
+[HUONG_DAN_NHOM.md](HUONG_DAN_NHOM.md) (cài PostgreSQL thông thường + nạp file
+`khong_khi.backup`, không cần tải lại dữ liệu từ GEE).
 
 Cài lại trên máy khác: tải bản zip PostgreSQL 16 (EnterpriseDB, "binaries") và
 `postgis-bundle-pg16-*.zip` (download.osgeo.org/postgis/windows/pg16), giải nén
