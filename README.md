@@ -28,6 +28,14 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
   dòng lệnh `D:\pgsql\bin\psql -U postgres -d khong_khi`.
 - Tắt hẳn: `D:\pgsql\bin\pg_ctl -D D:\pgsql\data stop`
 
+**Nạp dữ liệu có sẵn (cho thành viên nhóm):** lấy file `khong_khi.backup`
+(~73 MB, nhóm chia sẻ qua Google Drive) rồi chạy, không cần tải lại từ GEE:
+
+```bash
+createdb -U postgres -p 5433 khong_khi
+pg_restore -U postgres -p 5433 -d khong_khi --no-owner khong_khi.backup
+```
+
 Cài lại trên máy khác: tải bản zip PostgreSQL 16 (EnterpriseDB, "binaries") và
 `postgis-bundle-pg16-*.zip` (download.osgeo.org/postgis/windows/pg16), giải nén
 PostGIS đè vào thư mục PostgreSQL, rồi chạy
