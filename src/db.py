@@ -42,7 +42,9 @@ def bat_may_chu():
         stderr=subprocess.DEVNULL,
         creationflags=subprocess.DETACHED_PROCESS
         | subprocess.CREATE_NEW_PROCESS_GROUP)
-    for _ in range(30):
+    # Sau khi tat may dot ngot, PostgreSQL phai tu khoi phuc (co the mat ca phut)
+    print("(neu may vua tat dot ngot, co the phai cho 1-2 phut)")
+    for _ in range(360):
         time.sleep(0.5)
         if _dang_chay():
             return
