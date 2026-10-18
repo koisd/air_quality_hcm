@@ -1,0 +1,6 @@
+{
+  "ve_tinh": "Sentinel-2 L2A (COPERNICUS/S2_SR_HARMONIZED)",
+  "tu": "2025-12-01",
+  "den": "2026-03-31",
+  "cach_ghep": "median, che may theo SCL"
+}

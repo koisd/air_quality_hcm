@@ -12,6 +12,8 @@ Cac endpoint:
     GET /api/lich-su?id_o=&chi_so=  chuoi lich su cua mot o
     GET /api/du-bao?id_o=&chi_so=   du bao t+1..t+3 moi nhat cua mot o
     GET /api/danh-gia               bang so sanh sai so cac mo hinh
+    GET /api/kich-ban?chi_so=&luong_mua=&toc_do_gio=&nhiet_do=
+                                    du bao t+1 cua moi o theo thoi tiet tu dat
 """
 import argparse
 import threading
@@ -176,6 +178,79 @@ def danh_gia():
                                  "mape": r["mape"], "r2": r["r2"],
                                  "n": r["so_mau_test"]}
     return kq
+
+
+# ------------------------------------------------------- kich ban thoi tiet
+KB = {}
+
+
+def nap_kich_ban():
+    """Doc mo hinh kich ban (src/kich_ban.py) mot lan, giu trong bo nho."""
+    if KB:
+        return KB
+    import json
+    import pandas as pd
+    import xgboost as xgb
+    f = cfg.MODELS / "kich_ban.json"
+    if not f.exists():
+        raise HTTPException(503, "Chua co mo hinh kich ban. Chay src/kich_ban.py")
+    tt = json.loads(f.read_text(encoding="utf-8"))
+    KB["tt"] = tt
+    KB["goc"] = pd.read_parquet(cfg.PROCESSED / "kich_ban_goc.parquet")
+    KB["khi_hau"] = pd.read_parquet(cfg.PROCESSED / "khi_hau_thang.parquet")
+    KB["mh"] = {}
+    for c in tt["he_so"]:
+        m = xgb.XGBRegressor()
+        m.load_model(cfg.MODELS / ("kich_ban_%s.json" % c))
+        KB["mh"][c] = m
+    return KB
+
+
+@app.get("/api/kich-ban")
+def kich_ban(chi_so: str = "no2", luong_mua: float = None,
+             toc_do_gio: float = None, nhiet_do: float = None):
+    """Du bao t+1 cho ca 318 o: mot lan voi thoi tiet binh thuong cua thang
+    (khi hau), mot lan voi thoi tiet nguoi dung dat. Bien nao bo trong thi
+    giu gia tri khi hau."""
+    import pandas as pd
+    kb = nap_kich_ban()
+    if chi_so not in kb["mh"]:
+        raise HTTPException(404, "Chi so %s khong co mo hinh kich ban" % chi_so)
+    with _khoa:
+        goc = kb["goc"][kb["goc"].chi_so == chi_so].sort_values("id_o")
+        ngay_goc = goc.ngay.iloc[0]
+        ngay_db = ngay_goc + pd.Timedelta(days=1)
+        kh = (kb["khi_hau"][kb["khi_hau"].thang == ngay_db.month]
+              .set_index("id_o").reindex(goc.id_o))
+        X = goc[kb["tt"]["bien_dau_vao"][:-3]].reset_index(drop=True)
+        thuong = X.copy()
+        for b in ("nhiet_do", "toc_do_gio", "luong_mua"):
+            thuong[b + "_mai"] = kh[b].to_numpy()
+        dat = thuong.copy()
+        for b, v in (("nhiet_do", nhiet_do), ("toc_do_gio", toc_do_gio),
+                     ("luong_mua", luong_mua)):
+            if v is not None:
+                dat[b + "_mai"] = v
+        k = kb["tt"]["he_so"][chi_so]
+        m = kb["mh"][chi_so]
+        y0 = m.predict(thuong) / k
+        y1 = m.predict(dat) / k
+    ids = goc.id_o.astype(int).tolist()
+    tb0, tb1 = float(y0.mean()), float(y1.mean())
+    return {
+        "chi_so": chi_so, "ngay_goc": str(ngay_goc.date()),
+        "ngay_du_bao": str(ngay_db.date()),
+        "thoi_tiet_binh_thuong": {b: round(float(kh[b].mean()), 2)
+                                  for b in ("nhiet_do", "toc_do_gio", "luong_mua")},
+        "thoi_tiet_dat": {b: round(float(dat[b + "_mai"].mean()), 2)
+                          for b in ("nhiet_do", "toc_do_gio", "luong_mua")},
+        "tb_binh_thuong": tb0, "tb_kich_ban": tb1,
+        "chenh_lech": tb1 - tb0,
+        "phan_tram": (tb1 / tb0 - 1) * 100 if chi_so == "no2" else None,
+        "r2_test": kb["tt"]["chi_so"][chi_so]["sai_so_test"]["r2"],
+        "binh_thuong": dict(zip(ids, map(float, y0))),
+        "gia_tri": dict(zip(ids, map(float, y1))),
+    }
 
 
 @app.get("/")

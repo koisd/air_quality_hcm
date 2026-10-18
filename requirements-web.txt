@@ -1,0 +1,8 @@
+# Chi de chay web (khong thu thap du lieu / huan luyen lai)
+# Cai dat:  pip install -r requirements-web.txt
+fastapi>=0.110
+uvicorn[standard]>=0.29
+psycopg[binary]>=3.2
+pandas>=2.2
+pyarrow>=15
+xgboost>=2.1

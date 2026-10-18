@@ -51,6 +51,20 @@
   th{color:var(--chu-mo);font-weight:600}
   .info-o{background:var(--nen);border:1px solid var(--vien);border-radius:6px;
           padding:8px 10px;font-size:12px;color:var(--chu-mo)}
+  .anh-o{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;
+         border:1px solid var(--vien);display:block;background:var(--nen)}
+  .nut-kb{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+  .nut-kb button{padding:7px 6px;border:1px solid var(--vien);border-radius:6px;
+                 background:#fff;font-size:12px;color:var(--chu);cursor:pointer}
+  .nut-kb button.chon{border-color:var(--chinh);background:#e8f3f5;font-weight:600}
+  .thanh-kb{margin-top:10px;font-size:12px}
+  .thanh-kb label{display:flex;justify-content:space-between;color:var(--chu-mo);margin-top:6px}
+  .thanh-kb label b{color:var(--chu)}
+  .kq-kb{margin-top:10px;background:var(--nen);border:1px solid var(--vien);
+         border-radius:6px;padding:9px 11px;font-size:12.5px;line-height:1.5}
+  .kq-kb .so{font-size:18px;font-weight:700}
+  .bat-kb{display:flex;align-items:center;gap:6px;font-size:12px;margin-top:8px;color:var(--chu-mo)}
+  .bat-kb select{width:auto;padding:3px 6px;font-size:12px}
   @media(max-width:860px){
     #khung{flex-direction:column}
     #canh{width:100%;height:46vh;border-left:none;border-top:1px solid var(--vien)}
@@ -84,6 +98,29 @@
       <div class="ngay"><span>Tốt</span><span>Trung bình</span><span>Xấu</span></div>
     </div>
 
+    <div class="muc" id="khu-kich-ban">
+      <div class="nhan">Kịch bản thời tiết ngày mai</div>
+      <div class="nut-kb" id="nut-kb">
+        <button data-kb="thuong" class="chon">Bình thường</button>
+        <button data-kb="nang">Nắng nóng, lặng gió</button>
+        <button data-kb="mua">Mưa lớn</button>
+        <button data-kb="gio">Gió mạnh</button>
+      </div>
+      <div class="thanh-kb">
+        <label>Lượng mưa <b id="gt-mua"></b></label>
+        <input type="range" id="kb-mua" min="0" max="80" step="1">
+        <label>Tốc độ gió <b id="gt-gio"></b></label>
+        <input type="range" id="kb-gio" min="0" max="7" step="0.1">
+        <label>Nhiệt độ <b id="gt-nhiet"></b></label>
+        <input type="range" id="kb-nhiet" min="22" max="33" step="0.1">
+      </div>
+      <div class="kq-kb" id="kq-kb">Đang tải…</div>
+      <div class="bat-kb">
+        <input type="checkbox" id="kb-ban-do"><label for="kb-ban-do">Hiện kịch bản trên bản đồ:</label>
+        <select id="kb-kieu"><option value="muc">mức cảnh báo</option><option value="doi">mức thay đổi</option></select>
+      </div>
+    </div>
+
     <div class="muc" id="khu-chi-tiet">
       <div class="trong">Bấm vào một ô trên bản đồ để xem biểu đồ lịch sử và dự báo.</div>
     </div>
@@ -94,10 +131,18 @@
 const API = "";
 let thongTin = null, luoiLayer = null, duLieuNgay = {}, bieuDo = null;
 let chiSoHienTai = "no2", danhSachNgay = [], oDangChon = null;
+// Kich ban thoi tiet ngay mai (mo hinh src/kich_ban.py)
+const kichBan = {ketQua:null, trenBanDo:false, thuong:null};
+const MAU_KB = {
+  nang:{luong_mua:0, toc_do_gio:0.5, nhiet_do:31},
+  mua:{luong_mua:40, toc_do_gio:2.5, nhiet_do:25.5},
+  gio:{luong_mua:2, toc_do_gio:5}
+};
 
 const map = L.map("ban-do", {zoomControl:true}).setView([10.95, 106.95], 9);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution:'&copy; OpenStreetMap contributors', maxZoom:18
+// Nen ban do Esri: tile.openstreetmap.org bi mang chan (reset ket noi), CARTO doi API key
+L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+  attribution:'Tiles &copy; Esri', maxZoom:18
 }).addTo(map);
 
 const fmt = v => {
@@ -133,7 +178,30 @@ function lietKeNgay(dau, cuoi){
   return ds;
 }
 
+function mauThayDoi(d, thang){
+  // xanh = giam, do = tang; thang = chenh lech lon nhat (mau dam nhat)
+  if (d === null || d === undefined || !isFinite(d)) return "#e3e7ec";
+  const t = Math.max(-1, Math.min(1, d / thang));
+  const a = Math.abs(t), tron = (x,y)=>Math.round(x + (y-x)*a);
+  return t < 0 ? `rgb(${tron(240,31)},${tron(240,102)},${tron(240,170)})`
+               : `rgb(${tron(240,192)},${tron(240,72)},${tron(240,63)})`;
+}
+
+function veKichBanLenBanDo(){
+  const kb = kichBan.ketQua, ng = thongTin.nguong[chiSoHienTai];
+  const kieu = document.getElementById("kb-kieu").value;
+  const doi = Object.keys(kb.gia_tri).map(i => kb.gia_tri[i] - kb.binh_thuong[i]);
+  const thang = Math.max(...doi.map(Math.abs)) || 1;
+  luoiLayer.setStyle(f => {
+    const i = f.properties.id_o, v = kb.gia_tri[i];
+    const mau = kieu === "doi" ? mauThayDoi(v - kb.binh_thuong[i], thang) : mauTheoNguong(v, ng);
+    return {fillColor: mau, fillOpacity: v==null?0.15:0.75, color:"#ffffff", weight:0.5};
+  });
+  document.getElementById("ngay-hien").textContent = kb.ngay_du_bao + " (kịch bản)";
+}
+
 async function veBanDo(ngay){
+  if (kichBan.trenBanDo && kichBan.ketQua) return veKichBanLenBanDo();
   const ng = thongTin.nguong[chiSoHienTai];
   let dl;
   const khoa = chiSoHienTai + "|" + ngay;
@@ -200,15 +268,90 @@ async function chonO(id_o, ma_o){
         <div><div class="n">Cao nhất</div><div class="v">${fmt(Math.max(...hopLe))}</div></div>
       </div>
       <canvas id="bieu-do" height="150"></canvas>
+      <div class="nhan" style="margin-top:12px">Ảnh vệ tinh màu thật của ô</div>
+      <img class="anh-o" src="/static/anh/o_${id_o}.jpg" alt="Ảnh Sentinel-2 ô ${ma_o}"
+           onerror="this.parentNode.removeChild(this.nextElementSibling);this.remove()">
+      <div class="phu">Sentinel-2 L2A, ảnh ghép trung vị mùa khô 12/2025–3/2026, độ phân giải 10 m</div>
       ${db ? db.du_bao.map(x=>
         `<div class="the-canh" style="background:${mau[x.muc]||'#8a8a8a'}">
            ${x.ngay} (t+${x.tam}) — ${fmt(x.gia_tri)} · ${x.muc}</div>`).join("")
         : '<div class="info-o" style="margin-top:8px">Chỉ số này không có dự báo — chỉ hiển thị bản đồ.</div>'}
     `;
     veBieuDo(ls, db);
+    if (kichBan.ketQua) tinhKichBan();
   }catch(e){
     khu.innerHTML = '<div class="trong">Không lấy được dữ liệu cho ô này.</div>';
   }
+}
+
+function ghiThanhKb(t){
+  const m = document.getElementById("kb-mua"), g = document.getElementById("kb-gio"),
+        n = document.getElementById("kb-nhiet");
+  if (t.luong_mua !== undefined) m.value = t.luong_mua;
+  if (t.toc_do_gio !== undefined) g.value = t.toc_do_gio;
+  if (t.nhiet_do !== undefined) n.value = t.nhiet_do;
+  document.getElementById("gt-mua").textContent = (+m.value).toFixed(0) + " mm/ngày";
+  document.getElementById("gt-gio").textContent = (+g.value).toFixed(1) + " m/s";
+  document.getElementById("gt-nhiet").textContent = (+n.value).toFixed(1) + " °C";
+}
+
+async function tinhKichBan(){
+  const khu = document.getElementById("khu-kich-ban");
+  const c = thongTin.chi_so.find(x=>x.ma===chiSoHienTai);
+  if (!c || !c.co_du_bao){ khu.style.display = "none"; return; }
+  khu.style.display = "";
+  // "Binh thuong" -> moi o giu khi hau thang cua rieng no (khong gui tham so)
+  const thuong = document.querySelector('#nut-kb button[data-kb="thuong"]').classList.contains("chon");
+  const q = thuong ? "" : `luong_mua=${document.getElementById("kb-mua").value}` +
+            `&toc_do_gio=${document.getElementById("kb-gio").value}` +
+            `&nhiet_do=${document.getElementById("kb-nhiet").value}`;
+  let kb;
+  try { kb = await lay(`/api/kich-ban?chi_so=${chiSoHienTai}&${q}`); }
+  catch(e){ document.getElementById("kq-kb").textContent = "Chưa có mô hình kịch bản."; return; }
+  kichBan.ketQua = kb;
+  const ng = thongTin.nguong[chiSoHienTai];
+  const muc = v => !ng ? "" : v < ng.tot_duoi ? "Tốt" : v < ng.trung_binh_duoi ? "Trung bình" : "Xấu";
+  const demXau = o => Object.values(o).filter(v => ng && v >= ng.trung_binh_duoi).length;
+  const d = kb.chenh_lech, dau = d > 0 ? "+" : "";
+  const bt = kb.thoi_tiet_binh_thuong;
+  let dong = `Dự báo ngày <b>${kb.ngay_du_bao}</b>, trung bình ${Object.keys(kb.gia_tri).length} ô:<br>
+    <span class="so">${fmt(kb.tb_kich_ban)}</span>
+    <span style="color:${d>0?'var(--xau)':d<0?'var(--tot)':'var(--chu-mo)'};font-weight:600">
+      (${dau}${fmt(d)}${kb.phan_tram!==null ? `; ${dau}${kb.phan_tram.toFixed(1)}%` : ""})</span>
+    so với thời tiết bình thường<br>
+    Số ô mức Xấu: <b>${demXau(kb.gia_tri)}</b> (bình thường: ${demXau(kb.binh_thuong)})`;
+  if (oDangChon && kb.gia_tri[oDangChon] !== undefined){
+    const v = kb.gia_tri[oDangChon], v0 = kb.binh_thuong[oDangChon];
+    dong += `<br>Ô đang chọn: <b>${fmt(v)}</b> · ${muc(v)} (bình thường ${fmt(v0)} · ${muc(v0)})`;
+  }
+  dong += `<div class="phu">Bình thường tháng ${+kb.ngay_du_bao.slice(5,7)}: mưa ${bt.luong_mua.toFixed(0)} mm,
+    gió ${bt.toc_do_gio.toFixed(1)} m/s, ${bt.nhiet_do.toFixed(1)} °C · XGBoost có thêm thời tiết ngày dự báo, R² kiểm tra ${kb.r2_test.toFixed(2)}</div>`;
+  document.getElementById("kq-kb").innerHTML = dong;
+  if (kichBan.trenBanDo) veKichBanLenBanDo();
+}
+let henKb = null;
+function henTinh(){ clearTimeout(henKb); henKb = setTimeout(tinhKichBan, 150); }
+
+async function khoiDongKichBan(){
+  const kb = await lay(`/api/kich-ban?chi_so=no2`).catch(()=>null);
+  kichBan.thuong = kb ? kb.thoi_tiet_binh_thuong : {luong_mua:10, toc_do_gio:1.7, nhiet_do:26.5};
+  ghiThanhKb(kichBan.thuong);
+  const nut = [...document.querySelectorAll("#nut-kb button")];
+  nut.forEach(b => b.addEventListener("click", ()=>{
+    nut.forEach(x=>x.classList.toggle("chon", x===b));
+    ghiThanhKb({...kichBan.thuong, ...(MAU_KB[b.dataset.kb]||{})});
+    tinhKichBan();
+  }));
+  ["kb-mua","kb-gio","kb-nhiet"].forEach(id => document.getElementById(id)
+    .addEventListener("input", ()=>{ nut.forEach(x=>x.classList.remove("chon")); ghiThanhKb({}); henTinh(); }));
+  document.getElementById("kb-ban-do").addEventListener("change", e=>{
+    kichBan.trenBanDo = e.target.checked;
+    document.getElementById("thanh-ngay").dispatchEvent(new Event("change"));
+  });
+  document.getElementById("kb-kieu").addEventListener("change", ()=>{
+    if (kichBan.trenBanDo) veKichBanLenBanDo();
+  });
+  await tinhKichBan();
 }
 
 async function khoiDong(){
@@ -262,14 +405,20 @@ async function khoiDong(){
     document.getElementById("ngay-hien").textContent = ngayTuChiSo(+thanh.value);
   });
   thanh.addEventListener("change", capNhat);
+  // keo thanh thoi gian -> quay ve xem so do that
+  thanh.addEventListener("input", ()=>{
+    if (kichBan.trenBanDo){ kichBan.trenBanDo = false; document.getElementById("kb-ban-do").checked = false; }
+  });
   sel.addEventListener("change", async ()=>{
     chiSoHienTai = sel.value;
     if (+thanh.value > ngayCuoiCuaChiSo()) thanh.value = ngayCuoiCuaChiSo();
+    await tinhKichBan();
     await capNhat();
     if (oDangChon) chonO(oDangChon,
       (gj.features.find(f=>f.properties.id_o===oDangChon)||{properties:{}}).properties.ma_o || "");
   });
 
+  await khoiDongKichBan();
   await capNhat();
 }
 

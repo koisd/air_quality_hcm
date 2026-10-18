@@ -1,5 +1,8 @@
 ee_project.txt
 __pycache__/
 data/raw/
-data/processed/
-models/*.pt
+data/processed/*
+# 2 file nho can cho bang "Kich ban thoi tiet" tren web
+!data/processed/kich_ban_goc.parquet
+!data/processed/khi_hau_thang.parquet
+*.backup
