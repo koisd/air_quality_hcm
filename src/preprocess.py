@@ -22,7 +22,9 @@ GIOI_HAN_NOI_SUY = 5          # khong noi suy qua 5 ngay trong lien tiep
 
 def doc_tho(thu_muc):
     """Gop toan bo CSV trong thu muc nguon thanh mot bang dang dai."""
-    files = sorted(thu_muc.glob("*.csv"))
+    # NDVI (1 gia tri/thang) duoc ghep rieng trong them_bien.py
+    files = sorted(f for f in thu_muc.glob("*.csv")
+                   if not f.name.startswith("ndvi_"))
     if not files:
         sys.exit("Khong co file CSV nao trong %s. Chay truoc: "
                  "python src/fetch_gee.py"

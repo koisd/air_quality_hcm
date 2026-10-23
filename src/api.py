@@ -12,8 +12,9 @@ Cac endpoint:
     GET /api/lich-su?id_o=&chi_so=  chuoi lich su cua mot o
     GET /api/du-bao?id_o=&chi_so=   du bao t+1..t+3 moi nhat cua mot o
     GET /api/danh-gia               bang so sanh sai so cac mo hinh
-    GET /api/kich-ban?chi_so=&luong_mua=&toc_do_gio=&nhiet_do=
-                                    du bao t+1 cua moi o theo thoi tiet tu dat
+    GET /api/kich-ban?chi_so=&luong_mua=&toc_do_gio=&nhiet_do=&ndvi_doi=
+                                    du bao t+1 cua moi o theo thoi tiet va
+                                    muc thay doi cay xanh (NDVI) tu dat
 """
 import argparse
 import threading
@@ -208,7 +209,8 @@ def nap_kich_ban():
 
 @app.get("/api/kich-ban")
 def kich_ban(chi_so: str = "no2", luong_mua: float = None,
-             toc_do_gio: float = None, nhiet_do: float = None):
+             toc_do_gio: float = None, nhiet_do: float = None,
+             ndvi_doi: float = None):
     """Du bao t+1 cho ca 318 o: mot lan voi thoi tiet binh thuong cua thang
     (khi hau), mot lan voi thoi tiet nguoi dung dat. Bien nao bo trong thi
     giu gia tri khi hau."""
@@ -231,6 +233,9 @@ def kich_ban(chi_so: str = "no2", luong_mua: float = None,
                      ("luong_mua", luong_mua)):
             if v is not None:
                 dat[b + "_mai"] = v
+        # Cay xanh: cong them vao NDVI hien tai cua tung o (vd +0.1 = phu xanh hon)
+        if ndvi_doi and "ndvi" in dat:
+            dat["ndvi"] = (dat["ndvi"] + ndvi_doi).clip(-1, 1)
         k = kb["tt"]["he_so"][chi_so]
         m = kb["mh"][chi_so]
         y0 = m.predict(thuong) / k
@@ -244,6 +249,10 @@ def kich_ban(chi_so: str = "no2", luong_mua: float = None,
                                   for b in ("nhiet_do", "toc_do_gio", "luong_mua")},
         "thoi_tiet_dat": {b: round(float(dat[b + "_mai"].mean()), 2)
                           for b in ("nhiet_do", "toc_do_gio", "luong_mua")},
+        "ndvi_hien_tai": (round(float(thuong["ndvi"].mean()), 3)
+                          if "ndvi" in thuong else None),
+        "ndvi_dat": (round(float(dat["ndvi"].mean()), 3)
+                     if "ndvi" in dat else None),
         "tb_binh_thuong": tb0, "tb_kich_ban": tb1,
         "chenh_lech": tb1 - tb0,
         "phan_tram": (tb1 / tb0 - 1) * 100 if chi_so == "no2" else None,

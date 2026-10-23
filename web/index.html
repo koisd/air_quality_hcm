@@ -99,12 +99,13 @@
     </div>
 
     <div class="muc" id="khu-kich-ban">
-      <div class="nhan">Kịch bản thời tiết ngày mai</div>
+      <div class="nhan">Kịch bản đầu vào ngày mai (thời tiết, cây xanh)</div>
       <div class="nut-kb" id="nut-kb">
         <button data-kb="thuong" class="chon">Bình thường</button>
         <button data-kb="nang">Nắng nóng, lặng gió</button>
         <button data-kb="mua">Mưa lớn</button>
         <button data-kb="gio">Gió mạnh</button>
+        <button data-kb="cay">Trồng thêm cây xanh</button>
       </div>
       <div class="thanh-kb">
         <label>Lượng mưa <b id="gt-mua"></b></label>
@@ -113,6 +114,8 @@
         <input type="range" id="kb-gio" min="0" max="7" step="0.1">
         <label>Nhiệt độ <b id="gt-nhiet"></b></label>
         <input type="range" id="kb-nhiet" min="22" max="33" step="0.1">
+        <label>Cây xanh (NDVI thay đổi) <b id="gt-ndvi"></b></label>
+        <input type="range" id="kb-ndvi" min="-0.2" max="0.3" step="0.01">
       </div>
       <div class="kq-kb" id="kq-kb">Đang tải…</div>
       <div class="bat-kb">
@@ -136,7 +139,8 @@ const kichBan = {ketQua:null, trenBanDo:false, thuong:null};
 const MAU_KB = {
   nang:{luong_mua:0, toc_do_gio:0.5, nhiet_do:31},
   mua:{luong_mua:40, toc_do_gio:2.5, nhiet_do:25.5},
-  gio:{luong_mua:2, toc_do_gio:5}
+  gio:{luong_mua:2, toc_do_gio:5},
+  cay:{ndvi_doi:0.1}
 };
 
 const map = L.map("ban-do", {zoomControl:true}).setView([10.95, 106.95], 9);
@@ -290,6 +294,9 @@ function ghiThanhKb(t){
   if (t.luong_mua !== undefined) m.value = t.luong_mua;
   if (t.toc_do_gio !== undefined) g.value = t.toc_do_gio;
   if (t.nhiet_do !== undefined) n.value = t.nhiet_do;
+  const c = document.getElementById("kb-ndvi");
+  if (t.ndvi_doi !== undefined) c.value = t.ndvi_doi;
+  document.getElementById("gt-ndvi").textContent = ((+c.value > 0) ? "+" : "") + (+c.value).toFixed(2);
   document.getElementById("gt-mua").textContent = (+m.value).toFixed(0) + " mm/ngày";
   document.getElementById("gt-gio").textContent = (+g.value).toFixed(1) + " m/s";
   document.getElementById("gt-nhiet").textContent = (+n.value).toFixed(1) + " °C";
@@ -304,7 +311,8 @@ async function tinhKichBan(){
   const thuong = document.querySelector('#nut-kb button[data-kb="thuong"]').classList.contains("chon");
   const q = thuong ? "" : `luong_mua=${document.getElementById("kb-mua").value}` +
             `&toc_do_gio=${document.getElementById("kb-gio").value}` +
-            `&nhiet_do=${document.getElementById("kb-nhiet").value}`;
+            `&nhiet_do=${document.getElementById("kb-nhiet").value}` +
+            `&ndvi_doi=${document.getElementById("kb-ndvi").value}`;
   let kb;
   try { kb = await lay(`/api/kich-ban?chi_so=${chiSoHienTai}&${q}`); }
   catch(e){ document.getElementById("kq-kb").textContent = "Chưa có mô hình kịch bản."; return; }
@@ -318,14 +326,15 @@ async function tinhKichBan(){
     <span class="so">${fmt(kb.tb_kich_ban)}</span>
     <span style="color:${d>0?'var(--xau)':d<0?'var(--tot)':'var(--chu-mo)'};font-weight:600">
       (${dau}${fmt(d)}${kb.phan_tram!==null ? `; ${dau}${kb.phan_tram.toFixed(1)}%` : ""})</span>
-    so với thời tiết bình thường<br>
+    so với điều kiện bình thường<br>
     Số ô mức Xấu: <b>${demXau(kb.gia_tri)}</b> (bình thường: ${demXau(kb.binh_thuong)})`;
   if (oDangChon && kb.gia_tri[oDangChon] !== undefined){
     const v = kb.gia_tri[oDangChon], v0 = kb.binh_thuong[oDangChon];
     dong += `<br>Ô đang chọn: <b>${fmt(v)}</b> · ${muc(v)} (bình thường ${fmt(v0)} · ${muc(v0)})`;
   }
   dong += `<div class="phu">Bình thường tháng ${+kb.ngay_du_bao.slice(5,7)}: mưa ${bt.luong_mua.toFixed(0)} mm,
-    gió ${bt.toc_do_gio.toFixed(1)} m/s, ${bt.nhiet_do.toFixed(1)} °C · XGBoost có thêm thời tiết ngày dự báo, R² kiểm tra ${kb.r2_test.toFixed(2)}</div>`;
+    gió ${bt.toc_do_gio.toFixed(1)} m/s, ${bt.nhiet_do.toFixed(1)} °C${kb.ndvi_hien_tai!==null ?
+    ` · NDVI trung bình ${kb.ndvi_hien_tai.toFixed(2)} → ${kb.ndvi_dat.toFixed(2)}` : ""} · XGBoost có thêm thời tiết ngày dự báo, R² kiểm tra ${kb.r2_test.toFixed(2)}</div>`;
   document.getElementById("kq-kb").innerHTML = dong;
   if (kichBan.trenBanDo) veKichBanLenBanDo();
 }
@@ -334,7 +343,7 @@ function henTinh(){ clearTimeout(henKb); henKb = setTimeout(tinhKichBan, 150); }
 
 async function khoiDongKichBan(){
   const kb = await lay(`/api/kich-ban?chi_so=no2`).catch(()=>null);
-  kichBan.thuong = kb ? kb.thoi_tiet_binh_thuong : {luong_mua:10, toc_do_gio:1.7, nhiet_do:26.5};
+  kichBan.thuong = {...(kb ? kb.thoi_tiet_binh_thuong : {luong_mua:10, toc_do_gio:1.7, nhiet_do:26.5}), ndvi_doi:0};
   ghiThanhKb(kichBan.thuong);
   const nut = [...document.querySelectorAll("#nut-kb button")];
   nut.forEach(b => b.addEventListener("click", ()=>{
@@ -342,7 +351,7 @@ async function khoiDongKichBan(){
     ghiThanhKb({...kichBan.thuong, ...(MAU_KB[b.dataset.kb]||{})});
     tinhKichBan();
   }));
-  ["kb-mua","kb-gio","kb-nhiet"].forEach(id => document.getElementById(id)
+  ["kb-mua","kb-gio","kb-nhiet","kb-ndvi"].forEach(id => document.getElementById(id)
     .addEventListener("input", ()=>{ nut.forEach(x=>x.classList.remove("chon")); ghiThanhKb({}); henTinh(); }));
   document.getElementById("kb-ban-do").addEventListener("change", e=>{
     kichBan.trenBanDo = e.target.checked;

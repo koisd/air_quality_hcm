@@ -6,3 +6,4 @@ data/processed/*
 !data/processed/kich_ban_goc.parquet
 !data/processed/khi_hau_thang.parquet
 *.backup
+data/*.log

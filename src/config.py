@@ -77,6 +77,8 @@ CHI_SO = {
 
 SCALE_S5P = 1113.2     # met - do phan giai luoi L3 cua Sentinel-5P tren GEE
 SCALE_ERA5 = 11132.0   # met - do phan giai ERA5-Land
+SCALE_S2 = 10          # met - Sentinel-2 band B4/B8 (tinh NDVI cay xanh)
+S2_COLLECTION = "COPERNICUS/S2_SR_HARMONIZED"
 
 # Chi so duoc huan luyen mo hinh du bao (xem muc 6.2 bao cao)
 CHI_SO_DU_BAO = ["no2", "aer_ai"]

@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 import config as cfg
+from them_bien import them_lan_can, them_ndvi
 from train import chia_theo_thoi_gian, do_sai_so
 
 BIEN_TT = ["nhiet_do", "toc_do_gio", "luong_mua"]
@@ -39,6 +40,8 @@ def main():
     import xgboost as xgb
 
     df = pd.read_parquet(cfg.PROCESSED / ("dac_trung%s.parquet" % a.hau_to))
+    # Bo sung 23/10: cay xanh (NDVI Sentinel-2) + o lan can (yeu to khong gian)
+    df = them_lan_can(them_ndvi(df), list(cfg.CHI_SO))
     df = df.sort_values(["id_o", "ngay"]).reset_index(drop=True)
     bo = {"ngay", "id_o", "m_tr", "m_va", "m_te"}
     cot_goc = [c for c in df.columns
@@ -63,7 +66,7 @@ def main():
             n_estimators=600, learning_rate=0.05, max_depth=6,
             subsample=0.8, colsample_bytree=0.8, min_child_weight=5,
             reg_lambda=1.0, tree_method="hist", early_stopping_rounds=40,
-            n_jobs=-1, random_state=42)
+            n_jobs=4, random_state=42)
         mh.fit(df.loc[tr & co, cot], y[tr & co],
                eval_set=[(df.loc[va & co, cot], y[va & co])], verbose=False)
         ss = do_sai_so(y[te & co] / k, mh.predict(df.loc[te & co, cot]) / k)
@@ -73,6 +76,8 @@ def main():
             "sai_so_test": ss,
             "quan_trong_thoi_tiet_mai": {b + "_mai": float(qt[b + "_mai"])
                                          for b in BIEN_TT},
+            "quan_trong_ndvi": float(qt["ndvi"]),
+            "quan_trong_lan_can": float(qt.filter(like="_lc").sum()),
         }
         print("%s: R2 test %.3f, RMSE %.3g" % (chi_so, ss["r2"], ss["rmse"]))
 

@@ -120,10 +120,33 @@ def anh_thang_era5(nam, thang):
     return ee.ImageCollection(ngay.map(mot_ngay)).toBands(), so_ngay
 
 
+def anh_thang_ndvi(nam, thang):
+    """NDVI trung vi ca thang tu Sentinel-2 (10 m), bo pixel may/bong may/nuoc.
+
+    Band dat ten "ndvi_YYYY_MM_01" -> moi o luoi mot gia tri cho ca thang.
+    """
+    t0 = ee.Date("%04d-%02d-01" % (nam, thang))
+    # SCL: 4 thuc vat, 5 dat trong, 6 nuoc, 7 chua phan loai -> giu 4, 5, 7
+    def lam_sach(im):
+        scl = im.select("SCL")
+        tot = scl.eq(4).Or(scl.eq(5)).Or(scl.eq(7))
+        return im.updateMask(tot).normalizedDifference(["B8", "B4"]).toFloat()
+    col = (ee.ImageCollection(cfg.S2_COLLECTION)
+           .filterDate(t0, t0.advance(1, "month"))
+           .filterBounds(ee.Geometry.Rectangle(list(cfg.BBOX)))
+           .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 80))
+           .map(lam_sach))
+    ten = "ndvi_%04d_%02d_01" % (nam, thang)
+    anh = col.merge(ee.ImageCollection([_anh_rong("nd")])).median()
+    return anh.rename(ten), 1
+
+
 def lay_bang(anh, luoi_ee, scale):
     """reduceRegions tren luoi roi keo ket qua ve may."""
     kq = anh.reduceRegions(collection=luoi_ee,
-                           reducer=ee.Reducer.mean(),
+                           # forEach: anh 1 band (NDVI) van giu ten band
+                           # thay vi bi dat thanh "mean"
+                           reducer=ee.Reducer.mean().forEach(anh.bandNames()),
                            scale=scale,
                            tileScale=4)
     return kq.getInfo()["features"]
@@ -193,13 +216,15 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--chi-so", default="", help="no2 | co | so2 | o3 | aer_ai | all")
     ap.add_argument("--khi-tuong", action="store_true", help="tai ERA5-Land")
+    ap.add_argument("--ndvi", action="store_true",
+                    help="tai NDVI Sentinel-2 10 m (moi thang 1 gia tri/o)")
     ap.add_argument("--tu", default=cfg.NGAY_BAT_DAU[:7], help="YYYY-MM")
     ap.add_argument("--den", default=date.today().strftime("%Y-%m"), help="YYYY-MM")
     ap.add_argument("--ghi-de", action="store_true", help="tai lai ca thang da co")
     a = ap.parse_args()
 
-    if not a.chi_so and not a.khi_tuong:
-        ap.error("Can --chi-so hoac --khi-tuong")
+    if not a.chi_so and not a.khi_tuong and not a.ndvi:
+        ap.error("Can --chi-so, --khi-tuong hoac --ndvi")
 
     khoi_tao()
     luoi_ee, _ = doc_luoi()
@@ -218,6 +243,11 @@ def main():
     if a.khi_tuong:
         print("\n[ERA5-LAND] %s -> %s" % (a.tu, a.den))
         chay_mot_nguon("era5", anh_thang_era5, cfg.SCALE_ERA5,
+                       luoi_ee, a.tu, a.den, a.ghi_de)
+
+    if a.ndvi:
+        print("\n[NDVI SENTINEL-2] %s -> %s" % (a.tu, a.den))
+        chay_mot_nguon("ndvi", anh_thang_ndvi, cfg.SCALE_S2,
                        luoi_ee, a.tu, a.den, a.ghi_de)
 
 
