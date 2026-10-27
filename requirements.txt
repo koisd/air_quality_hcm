@@ -1,4 +1,4 @@
-# Thu vien can thiet cho do an
+# Thu vien day du: thu thap du lieu, huan luyen, chay web
 # Cai dat:  pip install -r requirements.txt
 # Rieng torch ban CPU:  pip install torch --index-url https://download.pytorch.org/whl/cpu
 
@@ -26,5 +26,5 @@ uvicorn[standard]>=0.29
 # --- Co so du lieu (PostgreSQL + PostGIS) ---
 psycopg[binary]>=3.2
 
-# --- Bieu do (dung khi ve hinh cho bao cao) ---
+# --- Bieu do (ve hinh phan tich) ---
 matplotlib>=3.8

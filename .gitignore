@@ -7,3 +7,5 @@ data/processed/*
 !data/processed/khi_hau_thang.parquet
 *.backup
 data/*.log
+runtime/
+models/kich_ban_truoc_*.json

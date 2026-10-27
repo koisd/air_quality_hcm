@@ -1,5 +1,5 @@
 -- Luoc do co so du lieu - Giam sat chat luong khong khi TP.HCM
--- PostgreSQL 16 + PostGIS, 7 bang. Theo muc 8.3 - 8.5 bao cao.
+-- PostgreSQL 16 + PostGIS, 7 bang.
 -- Chay lai file nay se XOA TOAN BO du lieu cu va tao lai bang rong.
 
 CREATE EXTENSION IF NOT EXISTS postgis;

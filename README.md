@@ -1,224 +1,93 @@
-# Giám sát ô nhiễm không khí và dự báo chất lượng không khí TP.HCM
+# Giám sát & dự báo chất lượng không khí TP.HCM
 
-Đồ án học phần **Trí tuệ nhân tạo và Trực quan hoá dữ liệu** — Đề tài 2.
+Hệ thống WebGIS theo dõi và dự báo ô nhiễm không khí trên toàn địa bàn
+TP.HCM (sau sáp nhập 01/7/2025) từ dữ liệu vệ tinh **Sentinel-5P** và khí tượng
+**ERA5-Land**, dùng mô hình AI dự báo trước **1–3 ngày**.
 
-Thu thập dữ liệu vệ tinh Sentinel-5P và khí tượng ERA5-Land qua Google Earth
-Engine, huấn luyện mô hình AI dự báo 1–3 ngày, hiển thị trên WebGIS.
+**Tính năng chính**
+
+- **Bản đồ ô nhiễm theo ngày** cho 5 chỉ số (NO₂, CO, SO₂, O₃, Aerosol Index)
+  trên lưới 318 ô 5 × 5 km, dữ liệu từ 07/2018 đến 09/2026.
+- **Dự báo 1–3 ngày** cho NO₂ và Aerosol Index, kèm mức cảnh báo.
+- **Chi tiết từng khu vực**: bấm lên bản đồ để xem chuỗi lịch sử, dự báo và
+  ảnh vệ tinh Sentinel-2 màu thật của ô đó.
+- **Mô phỏng kịch bản**: thay đổi thời tiết ngày mai (gió, mưa, nhiệt độ) hoặc
+  độ phủ cây xanh (NDVI) và xem mức ô nhiễm dự kiến thay đổi ra sao.
+- **API mở** (FastAPI) cho mọi dữ liệu trên bản đồ, kèm bảng so sánh sai số
+  các mô hình XGBoost, LSTM, GRU.
 
 ---
 
-## 1. Cài đặt để chạy web (máy Windows bất kỳ)
+## Cài đặt
 
-Không cần tải lại dữ liệu vệ tinh: toàn bộ dữ liệu đã xử lý nằm trong file sao
-lưu CSDL `khong_khi.backup` (~73 MB) ở mục
-[Releases](https://github.com/koisd/air_quality_hcm/releases/tag/du-lieu) của repo.
-Mất khoảng 30 phút, chủ yếu là thời gian tải và cài PostgreSQL.
+**Yêu cầu:** Windows 10/11 64-bit, ~2 GB ổ trống, có kết nối Internet khi cài.
+Không cần quyền quản trị, không cần cài sẵn Python hay PostgreSQL.
 
-> Chỉ muốn **xem web**, không cài gì: xin chủ dự án link `trycloudflare.com`
-> (chỉ mở được khi máy chủ dự án đang bật web).
+1. **Tải về:** trên trang này bấm **Code → Download ZIP**, rồi giải nén
+   (chuột phải → *Extract All*). Nên giải nén vào thư mục có đường dẫn ngắn,
+   ví dụ `C:\GiamSatKhongKhi`.
+2. **Cài đặt:** mở thư mục vừa giải nén, bấm đúp **`cai_dat.bat`**.
+   Bộ cài tự làm mọi việc, khoảng 5–15 phút tuỳ tốc độ mạng:
 
-### Bước 1. Lấy code
+   | Bước | Nội dung |
+   |---|---|
+   | 1 | Tìm Python 3.10–3.13; nếu chưa có thì tự cài Python 3.12 |
+   | 2 | Tạo môi trường Python riêng và cài thư viện |
+   | 3 | Tải PostgreSQL 16 + PostGIS bản chạy trong thư mục (~165 MB) |
+   | 4 | Khởi tạo cơ sở dữ liệu và nạp toàn bộ dữ liệu (~73 MB) |
 
-Repo đang để **private**, phải được chủ dự án (`koisd`) mời vào trước. Sau đó:
+   Khi thấy dòng **`[5/5] Hoàn tất`** là xong.
+3. **Mở ứng dụng:** bấm đúp **`chay_web.bat`**. Trình duyệt tự mở
+   <http://127.0.0.1:8000> khi ứng dụng sẵn sàng. Đóng cửa sổ đen là tắt.
 
-```powershell
-git clone https://github.com/koisd/air_quality_hcm.git
-```
+> Nếu Windows hiện *"Windows protected your PC"*, bấm **More info → Run anyway**.
+> Đây là cảnh báo chung cho mọi tệp tải từ Internet.
 
-Không quen dòng lệnh thì dùng GitHub Desktop: **File → Clone repository** →
-chọn `koisd/air_quality_hcm`.
+Mọi thành phần được cài vào thư mục `runtime\` bên trong thư mục ứng dụng và
+không ảnh hưởng tới phần mềm khác trên máy (kể cả PostgreSQL đã cài sẵn, nếu có).
+**Gỡ cài đặt:** tắt ứng dụng rồi xoá cả thư mục.
 
-### Bước 2. Cài Python và thư viện
+### Xử lý sự cố
 
-1. Cài **Python 3.11–3.13 (64-bit)** từ <https://www.python.org/downloads/>,
-   khi cài **tick ô "Add python.exe to PATH"**.
-2. Mở PowerShell **trong thư mục dự án**, chạy:
-
-```powershell
-pip install -r requirements-web.txt
-```
-
-(Chỉ gồm thư viện cho web. Muốn thu thập dữ liệu / huấn luyện lại thì cài đủ
-`requirements.txt`, xem mục 3.)
-
-### Bước 3. Cài PostgreSQL + PostGIS
-
-1. Tải bộ cài **PostgreSQL 16** (hoặc mới hơn: 17, 18 đều được) cho Windows:
-   <https://www.enterprisedb.com/downloads/postgres-postgresql-downloads>
-2. Cài mặc định, cổng giữ `5432`. Khi hỏi mật khẩu cho tài khoản `postgres`,
-   đặt mật khẩu **chỉ gồm chữ và số** (ví dụ `postgres123`) và ghi nhớ lại.
-3. Cuối quá trình cài, để tick **Stack Builder** → Finish. Trong Stack Builder
-   chọn bản PostgreSQL vừa cài → **Spatial Extensions** → tick **PostGIS 3.x
-   Bundle** → cài mặc định.
-
-### Bước 4. Nạp dữ liệu
-
-1. Vào <https://github.com/koisd/air_quality_hcm/releases/tag/du-lieu> (đăng nhập
-   GitHub), tải **`khong_khi.backup`** về thư mục `Downloads`.
-2. Mở PowerShell, chạy lần lượt (thay `postgres123` bằng mật khẩu ở bước 3,
-   thay `16` nếu cài bản khác):
-
-```powershell
-$env:PGPASSWORD = "postgres123"
-$pg = "C:\Program Files\PostgreSQL\16\bin"
-& "$pg\createdb.exe" -U postgres khong_khi
-& "$pg\pg_restore.exe" -U postgres -d khong_khi --no-owner "$HOME\Downloads\khong_khi.backup"
-```
-
-   Lệnh cuối chạy khoảng 20 giây – 2 phút, không báo gì là thành công.
-
-3. Báo cho code biết cách kết nối CSDL (chạy **một lần**, rồi **đóng và mở lại**
-   PowerShell / cửa sổ dòng lệnh):
-
-```powershell
-setx PG_DSN "postgresql://postgres:postgres123@localhost:5432/khong_khi"
-```
-
-### Bước 5. Mở web
-
-Bấm đúp **`chay_web.bat`** trong thư mục dự án. Trình duyệt tự mở
-<http://127.0.0.1:8000> khi web sẵn sàng. Đóng cửa sổ đen là tắt web.
-
-Hoặc chạy tay: `cd src` rồi `python api.py`.
-
-### Gặp lỗi
-
-| Thông báo | Cách sửa |
+| Hiện tượng | Cách xử lý |
 |---|---|
-| `'python' is not recognized` | Cài lại Python, nhớ tick "Add python.exe to PATH" |
-| `Chua cai du thu vien` / `No module named ...` | Chạy lại `pip install -r requirements-web.txt` (bước 2) |
-| `password authentication failed` | Sai mật khẩu trong lệnh `setx` ở bước 4.3 |
-| `connection refused` / `Connection timed out` | PostgreSQL chưa chạy: mở **Services**, bật `postgresql-x64-16` |
-| `type "geometry" does not exist` khi nạp | Chưa cài PostGIS (bước 3.3). Cài xong thì xoá CSDL `khong_khi` (`dropdb.exe -U postgres khong_khi`) rồi nạp lại |
-| `CSDL trong` | Bước 4 chưa chạy xong |
-| Web mở nhưng không có bản đồ nền | Máy không có mạng (bản đồ nền tải từ Esri) |
-| Cổng 8000 đã bị dùng | `python api.py --cong 8001` rồi mở `http://127.0.0.1:8001` |
+| Bộ cài báo lỗi khi tải | Kiểm tra mạng rồi chạy lại `cai_dat.bat`; các bước đã xong sẽ được bỏ qua |
+| `chay_web.bat` báo *chưa được cài đặt* | Chạy `cai_dat.bat` trước |
+| Mở lần đầu sau khi máy tắt đột ngột thì chờ lâu | Cơ sở dữ liệu đang tự khôi phục, chờ 1–2 phút |
+| Bản đồ không có nền | Máy không có mạng (nền bản đồ tải từ Esri) |
+| Cổng 8000 đã bị dùng | Mở cửa sổ lệnh trong thư mục `src`, chạy `..\runtime\venv\Scripts\python api.py --cong 8001`, rồi mở <http://127.0.0.1:8001> |
+| Cần cài lại dữ liệu từ đầu | Xoá thư mục `runtime\data` rồi chạy lại `cai_dat.bat` |
 
 ---
 
-## 2. Máy của chủ dự án
+## Hướng dẫn sử dụng
 
-PostgreSQL 16 + PostGIS cài dạng giải nén (không cần quyền admin) tại `D:\pgsql`:
-
-- Dữ liệu CSDL: `D:\pgsql\data`, cổng `5433` (máy đã có PostgreSQL 18 dùng cổng
-  5432), tài khoản `postgres`, không cần mật khẩu (chỉ nhận kết nối từ chính máy này).
-- **Không cần tự bật**: `api.py` và `nap_csdl.py` thấy PostgreSQL chưa chạy thì
-  tự gọi `pg_ctl start` (sau khi tắt máy đột ngột có thể mất 1–2 phút để khôi phục).
-- Xem bảng: `D:\pgsql\pgAdmin 4\runtime\pgAdmin4.exe`, hoặc
-  `D:\pgsql\bin\psql -U postgres -p 5433 -d khong_khi`.
-- Tắt hẳn: `D:\pgsql\bin\pg_ctl -D D:\pgsql\data stop`
-- Đổi đường dẫn qua biến môi trường `PG_BIN`, `PG_DATA`, `PG_DSN` (xem `src/config.py`).
-  Trên máy khác không có `D:\pgsql` thì code tự bỏ qua bước bật máy chủ.
-
-Tạo lại file sao lưu và cập nhật lên Releases sau khi nạp dữ liệu mới:
-
-```powershell
-D:\pgsql\bin\pg_dump -U postgres -p 5433 -Fc --no-owner -f khong_khi.backup khong_khi
-gh release upload du-lieu khong_khi.backup --clobber
-```
+- **Chọn chỉ số và ngày** ở thanh bên trái; bản đồ tô màu theo giá trị từng ô.
+  Các ngày mùa mưa có thể bị mây che (ô trắng); chọn ngày mùa khô
+  (tháng 12–4) để có bản đồ đầy đủ.
+- **Bấm vào một ô** để xem lịch sử, dự báo 3 ngày tới và ảnh vệ tinh của khu vực.
+- **Kịch bản thời tiết ngày mai**: chọn nhanh *Bình thường / Gió mạnh / Mưa lớn /
+  Nắng nóng, lặng gió / Trồng thêm cây xanh*, hoặc kéo các thanh trượt, rồi bật
+  *Hiện kịch bản trên bản đồ* để xem mức thay đổi theo từng ô.
 
 ---
 
-## 3. Thu thập dữ liệu và huấn luyện lại (không bắt buộc)
+## Dữ liệu và mô hình
 
-Chỉ cần khi muốn tải dữ liệu vệ tinh mới hoặc huấn luyện lại mô hình.
+| Hạng mục | Chi tiết |
+|---|---|
+| Vệ tinh | Sentinel-5P TROPOMI (Copernicus), 1 lần/ngày khoảng 13h30, đo **mật độ cột khí** (mol/m²), không phải nồng độ mặt đất |
+| Khí tượng | ERA5-Land: nhiệt độ, tốc độ gió, lượng mưa |
+| Cây xanh | NDVI từ Sentinel-2, độ phân giải 10 m |
+| Phạm vi | TP.HCM sau sáp nhập (gồm Bình Dương, Bà Rịa–Vũng Tàu), 6.709 km² đất liền, không gồm Côn Đảo |
+| Lưới | 318 ô 5 × 5 km. Pixel Sentinel-5P là 5,5 × 3,5 km, lớn hơn phần lớn phường/xã, nên dùng lưới đều thay cho ranh giới hành chính |
+| Thời gian | NO₂, CO từ 28/6/2018; AER_AI 4/7/2018; O₃ 8/9/2018; SO₂ 5/12/2018 |
+| Xử lý thiếu | Ngày bị mây che được nội suy tuyến tính, tối đa 5 ngày liên tiếp |
+| Mô hình | XGBoost, LSTM, GRU; chia dữ liệu theo thời gian 70/15/15, không xáo trộn |
+| Độ chính xác (NO₂, t+1) | LSTM R² = 0,77; GRU 0,77; XGBoost 0,75 |
+| Ngưỡng cảnh báo | Theo phân vị 60% và 80% của chuỗi dữ liệu, vì mật độ cột chưa có ngưỡng AQI chính thức |
 
-```bash
-pip install -r requirements.txt
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-```
-
-### 3.1. Đăng ký Google Earth Engine (làm một lần)
-
-1. Đăng ký tài khoản tại <https://earthengine.google.com/signup> — miễn phí,
-   dùng Gmail cá nhân hoặc email sinh viên.
-2. Tạo một project trên <https://console.cloud.google.com> và bật
-   **Earth Engine API** cho project đó.
-3. Đăng nhập từ máy:
-
-   ```bash
-   earthengine authenticate
-   ```
-
-4. Ghi mã project vào `src/ee_project.txt` (một dòng duy nhất). File này **không**
-   đưa lên GitHub, mỗi người dùng project của mình. Hoặc đặt biến môi trường
-   `EE_PROJECT` thay cho file.
-
-### 3.2. Tải lại sau khi tắt máy
-
-Script tải theo từng tháng và tự bỏ qua tháng đã có, nên chỉ cần chạy lại:
-
-```bash
-bash src/tai_tat_ca.sh
-```
-
-Xem đã tải được bao nhiêu:
-
-```bash
-ls data/raw/*.csv | wc -l
-```
-
-### 3.3. Thu thập và huấn luyện
-
-```bash
-cd src
-python make_grid.py                                     # nếu chưa chạy
-python fetch_gee.py --chi-so all --tu 2018-07 --den 2026-09
-python fetch_gee.py --khi-tuong  --tu 2018-07 --den 2026-09
-python preprocess.py
-python train.py --epochs 25
-python predict.py
-python kich_ban.py        # mô hình kịch bản thời tiết ngày mai (~2 phút)
-python tai_anh.py         # ảnh Sentinel-2 màu thật cho từng ô (web/static/anh)
-python nap_csdl.py        # nạp tất cả vào PostgreSQL (~1,5 phút)
-python api.py             # mở http://127.0.0.1:8000
-```
-
-Sau khi huấn luyện hoặc dự báo lại, chỉ cần `python nap_csdl.py --chi-du-bao`
-để thêm lần chạy mới vào bảng `mo_hinh` và `du_bao` (các lần chạy cũ được giữ
-lại để sau này đối chiếu dự báo với thực tế).
-
-`fetch_gee.py` chạy theo từng tháng và **tự bỏ qua tháng đã tải**, nên có thể
-dừng giữa chừng rồi chạy lại mà không mất công. Toàn bộ giai đoạn 2018–2026 mất
-khá lâu, nên chạy thử một năm trước:
-
-```bash
-python fetch_gee.py --chi-so no2 --tu 2025-01 --den 2025-12
-```
-
----
-
-## 4. Cấu trúc thư mục
-
-```
-air_quality_hcm/
-├── src/
-│   ├── config.py           Cấu hình chung: phạm vi, mã dataset, tham số mô hình
-│   ├── make_grid.py        Tải ranh giới TP.HCM, chia lưới 5×5 km
-│   ├── fetch_gee.py        Thu thập Sentinel-5P + ERA5-Land từ GEE
-│   ├── preprocess.py       Làm sạch, nội suy, sinh đặc trưng
-│   ├── train.py            Huấn luyện & so sánh XGBoost / LSTM / GRU
-│   ├── predict.py          Sinh bảng dự báo t+1…t+3
-│   ├── kich_ban.py         Mô hình kịch bản: thời tiết ngày mai thay đổi → dự báo t+1
-│   ├── tai_anh.py          Tải ảnh Sentinel-2 màu thật cho từng ô lưới
-│   ├── db.py               Kết nối PostgreSQL, tự bật máy chủ nếu chưa chạy
-│   ├── nap_csdl.py         Nạp ô lưới, quan trắc, khí tượng, mô hình, dự báo vào CSDL
-│   └── api.py              Backend FastAPI (đọc từ PostgreSQL + PostGIS)
-├── sql/schema.sql          Lược đồ 7 bảng (mục 8.4 báo cáo)
-├── web/
-│   ├── index.html          Giao diện WebGIS (Leaflet + Chart.js)
-│   └── static/anh/         Ảnh Sentinel-2 màu thật của từng ô (tai_anh.py)
-├── data/
-│   ├── boundary/           Ranh giới + lưới + ảnh xem trước
-│   ├── raw/                CSV thô từ GEE (một file mỗi tháng)
-│   └── processed/          Bảng đã xử lý (.parquet); chỉ 2 file cho kịch bản thời tiết lên GitHub
-├── models/                 Mô hình đã huấn luyện + ket_qua.json
-├── chay_web.bat            Bấm đúp để mở web
-├── requirements-web.txt    Thư viện chỉ để chạy web
-└── requirements.txt        Thư viện đầy đủ (thu thập + huấn luyện)
-```
-
-### Cơ sở dữ liệu
+Cơ sở dữ liệu PostgreSQL + PostGIS gồm 7 bảng:
 
 | Bảng | Số dòng | Ghi chú |
 |---|---|---|
@@ -229,34 +98,116 @@ air_quality_hcm/
 | `mo_hinh` | 18 / lần huấn luyện | 2 chỉ số × 3 mô hình × 3 tầm, kèm RMSE/MAE/MAPE/R² |
 | `chi_so`, `nguong_canh_bao` | 5, 15 | danh mục |
 
-PostGIS được dùng thật ở hai chỗ: `/api/luoi` trả GeoJSON bằng `ST_AsGeoJSON`,
-và khi bấm lên bản đồ, `/api/o-tai-diem` tìm ô chứa toạ độ bằng `ST_Contains`.
+PostGIS dùng để trả lưới dạng GeoJSON (`ST_AsGeoJSON`) và tìm ô chứa điểm bấm
+trên bản đồ (`ST_Contains`).
 
----
+### API
 
-## 5. Những điểm cần nắm khi bảo vệ
+Máy chủ FastAPI tại `http://127.0.0.1:8000`, tài liệu tương tác ở `/docs`.
 
-| Câu hỏi | Trả lời |
+| Endpoint | Chức năng |
 |---|---|
-| Vệ tinh đo gì? | **Mật độ cột khí** (mol/m²) — tổng lượng khí trong cả cột không khí, **không phải** nồng độ mặt đất (µg/m³) |
-| Bao lâu đo một lần? | 1 lần/ngày, khoảng **13h30** giờ địa phương (quỹ đạo đồng bộ mặt trời) |
-| Dữ liệu từ khi nào? | NO₂ và CO từ **28/6/2018**, AER_AI 4/7/2018, O₃ 8/9/2018, SO₂ 5/12/2018 |
-| Mây che thì sao? | Mất dữ liệu ngày đó. Mùa mưa (tháng 5–11) mất nhiều. Xử lý bằng **nội suy tuyến tính**, tối đa 5 ngày liên tiếp |
-| Sao chia ô lưới mà không theo phường? | Pixel Sentinel-5P là 5,5×3,5 km (~19 km²), **lớn hơn đa số phường**. Gom theo phường sẽ trùng giá trị. Lưới còn giữ chuỗi liền mạch khi địa giới đổi ngày 1/7/2025 |
-| Phạm vi không gian? | TP.HCM sau sáp nhập (gồm Bình Dương, Bà Rịa–Vũng Tàu), **6.709 km² đất liền**, chia thành **318 ô** 5×5 km. Không tính Côn Đảo vì cách đất liền ~200 km |
-| Dự báo những chỉ số nào? | **NO₂** (đủ 3 mô hình) và **Aerosol Index**. CO, SO₂, O₃ chỉ hiển thị bản đồ |
-| Chia dữ liệu thế nào? | Theo **thứ tự thời gian** (70/15/15), không xáo trộn, để tránh rò rỉ thông tin tương lai vào tập huấn luyện |
+| `GET /api/thong-tin` | Khoảng ngày, danh mục chỉ số, ngưỡng cảnh báo |
+| `GET /api/luoi` | Ranh giới các ô lưới (GeoJSON) |
+| `GET /api/o-tai-diem?kinh_do=&vi_do=` | Ô lưới chứa toạ độ |
+| `GET /api/ban-do?chi_so=&ngay=` | Giá trị từng ô trong một ngày |
+| `GET /api/lich-su?id_o=&chi_so=` | Chuỗi lịch sử của một ô |
+| `GET /api/du-bao?id_o=&chi_so=` | Dự báo t+1…t+3 mới nhất |
+| `GET /api/danh-gia` | So sánh sai số các mô hình |
+| `GET /api/kich-ban?chi_so=&luong_mua=&toc_do_gio=&nhiet_do=&ndvi_doi=` | Dự báo t+1 theo kịch bản thời tiết, cây xanh |
 
 ---
 
-## 6. Ghi chú kỹ thuật
+## Cấu trúc thư mục
 
-- **Ranh giới**: lấy từ GADM 4.1 cấp tỉnh rồi ghép 3 tỉnh cũ. Không dùng ranh
-  giới OpenStreetMap vì polygon của OSM bao gồm cả vùng biển (36.000 km²).
-- **ERA5-Land có độ trễ cập nhật**, không hợp cho dự báo thời gian thực. Khi
-  triển khai thật nên thay bằng `NOAA/GFS0P25` (dữ liệu dự báo khí tượng).
-- **Gió** lưu ở dạng hai thành phần `u`, `v`; `preprocess.py` gộp lại thành tốc
-  độ gió tổng hợp. Nhiệt độ đổi từ Kelvin sang °C, lượng mưa từ m sang mm.
-- **Ngưỡng cảnh báo** hiện tính theo phân vị 60% và 80% của chính chuỗi dữ liệu,
-  vì giá trị mật độ cột không có ngưỡng AQI chính thức. Nếu cần ngưỡng chuẩn
-  phải hiệu chỉnh về nồng độ mặt đất trước.
+```
+├── cai_dat.bat / cai_dat.ps1   Bộ cài đặt
+├── chay_web.bat                Mở ứng dụng
+├── src/
+│   ├── api.py                  Máy chủ FastAPI (đọc PostgreSQL + PostGIS)
+│   ├── config.py               Cấu hình chung: phạm vi, dataset, tham số mô hình
+│   ├── db.py                   Kết nối CSDL, tự khởi động PostgreSQL khi cần
+│   ├── make_grid.py            Ranh giới TP.HCM, chia lưới 5 × 5 km
+│   ├── fetch_gee.py            Thu thập Sentinel-5P, ERA5-Land, NDVI từ Google Earth Engine
+│   ├── preprocess.py           Làm sạch, nội suy, sinh đặc trưng
+│   ├── them_bien.py            Thêm NDVI và trung bình ô lân cận
+│   ├── train.py                Huấn luyện, so sánh XGBoost / LSTM / GRU
+│   ├── predict.py              Sinh dự báo t+1…t+3
+│   ├── kich_ban.py             Mô hình kịch bản thời tiết, cây xanh
+│   ├── phan_tich.py            Phân tích quan hệ giữa các chất và các yếu tố đầu vào
+│   ├── tai_anh.py              Ảnh Sentinel-2 màu thật cho từng ô
+│   └── nap_csdl.py             Nạp dữ liệu vào PostgreSQL
+├── sql/schema.sql              Lược đồ CSDL
+├── web/                        Giao diện (Leaflet + Chart.js), ảnh từng ô
+├── data/boundary/              Ranh giới và lưới
+├── models/                     Mô hình đã huấn luyện, kết quả đánh giá
+├── requirements-web.txt        Thư viện để chạy ứng dụng
+└── requirements.txt            Thư viện đầy đủ (thu thập + huấn luyện)
+```
+
+---
+
+## Dành cho nhà phát triển
+
+### Dùng PostgreSQL có sẵn trên máy
+
+Thay cho bước 3–4 của bộ cài: cài PostgreSQL 16+ kèm PostGIS 3.x, tải
+`khong_khi.backup` ở mục [Releases](https://github.com/koisd/air_quality_hcm/releases/tag/du-lieu), rồi:
+
+```powershell
+createdb -U postgres khong_khi
+pg_restore -U postgres -d khong_khi --no-owner khong_khi.backup
+setx PG_DSN "postgresql://postgres:<mật_khẩu>@localhost:5432/khong_khi"
+pip install -r requirements-web.txt
+cd src; python api.py
+```
+
+Các biến môi trường `PG_DSN`, `PG_BIN`, `PG_DATA` ghi đè cấu hình mặc định
+(xem `src/config.py`).
+
+### Thu thập dữ liệu và huấn luyện lại
+
+```bash
+pip install -r requirements.txt
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+earthengine authenticate
+```
+
+Ghi mã Google Cloud project đã bật Earth Engine API vào `src/ee_project.txt`
+(hoặc biến môi trường `EE_PROJECT`), rồi:
+
+```bash
+cd src
+python make_grid.py
+python fetch_gee.py --chi-so all --tu 2018-07 --den 2026-09
+python fetch_gee.py --khi-tuong  --tu 2018-07 --den 2026-09
+python fetch_gee.py --ndvi       --tu 2018-07 --den 2026-09
+python preprocess.py
+python them_bien.py
+python train.py --epochs 25
+python predict.py
+python kich_ban.py
+python tai_anh.py
+python nap_csdl.py            # lần sau chỉ cần: python nap_csdl.py --chi-du-bao
+```
+
+`fetch_gee.py` tải theo từng tháng và tự bỏ qua tháng đã có, nên có thể dừng
+rồi chạy tiếp (`bash src/tai_tat_ca.sh` chạy toàn bộ).
+
+### Ghi chú kỹ thuật
+
+- Ranh giới lấy từ GADM 4.1 cấp tỉnh, ghép 3 tỉnh cũ (polygon OpenStreetMap
+  gồm cả vùng biển, ~36.000 km²).
+- ERA5-Land cập nhật trễ vài ngày; khi chạy thời gian thực nên thay bằng
+  dữ liệu dự báo khí tượng `NOAA/GFS0P25`, và Sentinel-5P OFFL bằng NRTI.
+- Gió lưu dạng hai thành phần `u`, `v`, gộp thành tốc độ gió; nhiệt độ đổi
+  K → °C, lượng mưa m → mm.
+
+---
+
+## Nguồn dữ liệu và thành phần bên thứ ba
+
+Dữ liệu Copernicus Sentinel-5P, Sentinel-2 (ESA) và ERA5-Land (ECMWF) truy cập qua
+Google Earth Engine; ranh giới hành chính GADM 4.1; bản đồ nền Esri World Street Map.
+Bộ cài kèm PostgreSQL (PostgreSQL License) và PostGIS (GPL v2); giấy phép nằm trong
+`runtime\pgsql` sau khi cài.

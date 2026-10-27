@@ -80,7 +80,7 @@ SCALE_ERA5 = 11132.0   # met - do phan giai ERA5-Land
 SCALE_S2 = 10          # met - Sentinel-2 band B4/B8 (tinh NDVI cay xanh)
 S2_COLLECTION = "COPERNICUS/S2_SR_HARMONIZED"
 
-# Chi so duoc huan luyen mo hinh du bao (xem muc 6.2 bao cao)
+# Chi so duoc huan luyen mo hinh du bao
 CHI_SO_DU_BAO = ["no2", "aer_ai"]
 
 ERA5_COLLECTION = "ECMWF/ERA5_LAND/HOURLY"
@@ -92,13 +92,19 @@ ERA5_BANDS = {
 }
 
 # --------------------------------------------------------------- CSDL
-# PostgreSQL 16 + PostGIS cai dang zip tai D:\pgsql (khong can quyen admin),
-# chay cong 5433 vi cong 5432 danh cho PostgreSQL 18 co san tren may.
+# Uu tien PostgreSQL di kem do cai_dat.bat tao trong thu muc runtime/;
+# neu khong co thi dung ban giai nen tai D:\pgsql, cong 5433.
 # Doi bang bien moi truong PG_BIN / PG_DATA / PG_DSN neu cai cho khac.
-PG_BIN = Path(os.environ.get("PG_BIN", r"D:\pgsql\bin"))
-PG_DATA = Path(os.environ.get("PG_DATA", r"D:\pgsql\data"))
+RUNTIME = ROOT / "runtime"
+if (RUNTIME / "pgsql" / "bin" / "pg_ctl.exe").exists():
+    _pg, _cong = RUNTIME / "pgsql", (RUNTIME / "cong.txt").read_text().strip()
+    _data = RUNTIME / "data"
+else:
+    _pg, _cong, _data = Path(r"D:\pgsql"), "5433", Path(r"D:\pgsql\data")
+PG_BIN = Path(os.environ.get("PG_BIN", _pg / "bin"))
+PG_DATA = Path(os.environ.get("PG_DATA", _data))
 PG_DSN = os.environ.get(
-    "PG_DSN", "postgresql://postgres@localhost:5433/khong_khi")
+    "PG_DSN", "postgresql://postgres@localhost:%s/khong_khi" % _cong)
 
 CLOUD_MAX = 0.3              # nguong che mai khi loc anh S5P
 
